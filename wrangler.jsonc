@@ -1,0 +1,71 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "whoop-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  // global_fetch_strictly_public: required for CIMD (SSRF protection on
+  // outbound client-metadata fetches) — workers-oauth-provider only
+  // advertises client_id_metadata_document_supported with it present.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Custom domain — decided 2026-08-25: subdomain of promptmetrics.dev.
+  "routes": [
+    { "pattern": "whoop.promptmetrics.dev", "custom_domain": true }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "whoop-relay",
+      // Placeholder — replaced by `wrangler d1 create whoop-relay` output at provisioning.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      // Placeholder — replaced by `wrangler kv namespace create OAUTH_KV` output.
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+
+  "queues": {
+    "producers": [
+      { "binding": "EVENT_QUEUE", "queue": "whoop-events" }
+    ],
+    "consumers": [
+      {
+        "queue": "whoop-events",
+        // Coalescing works on batches: wait long enough that WHOOP's repeated
+        // .updated events for the same sleep collapse into one API call.
+        "max_batch_size": 100,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "dead_letter_queue": "whoop-events-dlq"
+      }
+    ]
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "TOKEN_MANAGER", "class_name": "TokenManager" },
+      { "name": "RATE_BUDGET", "class_name": "RateBudget" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TokenManager", "RateBudget"] }
+  ],
+
+  "triggers": {
+    // Every 6h: reconciliation (missed webhooks + cycle/strain polling).
+    // 03:30 UTC daily: proactive token refresh health check.
+    "crons": ["0 */6 * * *", "30 3 * * *"]
+  },
+
+  "observability": { "enabled": true }
+
+  // Secrets (set via `wrangler secret put`, never committed):
+  //   WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET  — existing WHOOP dev app
+  //   COOKIE_ENCRYPTION_KEY                 — workers-oauth-provider
+}

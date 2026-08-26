@@ -1,0 +1,24 @@
+{
+  "name": "whoop-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-user WHOOP orchestration layer: webhook ingest -> queue -> D1 read model, served to Claude clients over a remote MCP server (spec 2026-07-28).",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 execute whoop-relay --local --file=src/db/schema.sql",
+    "db:migrate:remote": "wrangler d1 execute whoop-relay --remote --file=src/db/schema.sql"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260826.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.126.0"
+  }
+}
