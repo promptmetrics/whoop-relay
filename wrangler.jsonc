@@ -17,16 +17,14 @@
     {
       "binding": "DB",
       "database_name": "whoop-relay",
-      // Placeholder — replaced by `wrangler d1 create whoop-relay` output at provisioning.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "afaf8c64-4e38-40fa-a867-ebc75119d00e"
     }
   ],
 
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
-      // Placeholder — replaced by `wrangler kv namespace create OAUTH_KV` output.
-      "id": "00000000000000000000000000000000"
+      "id": "d7a0b08b25544da18c6f58aa824796ea"
     }
   ],
 
