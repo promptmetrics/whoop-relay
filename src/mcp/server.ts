@@ -4,6 +4,7 @@ import type { Env, SessionProps } from "../types";
 import { whoop } from "../whoop/client";
 import { upsertRecovery, upsertCycle, upsertSleep, upsertWorkout } from "../db/upserts";
 import { drawBudget, getToken } from "../consumer";
+import { registerDashboard } from "./dashboard";
 
 // D1-first is the payoff of the whole pipeline: trend questions become SQL
 // instead of N paginated WHOOP calls, and answers cost zero API quota.
@@ -26,20 +27,27 @@ const rangeSchema = z.object({
   end: z.string().optional().describe("End date, YYYY-MM-DD (inclusive). Default: today.")
 });
 
-export function buildServer(env: Env, props: SessionProps): McpServer {
+export function buildServer(env: Env, props: SessionProps, origin: string): McpServer {
   const server = new McpServer(
     { name: "whoop-relay", version: "0.1.0" },
     {
       // 2026-07-28 list caching: the tool list is static and identical for
       // every user — cache it aggressively, publicly, in deterministic order.
+      // Resources too: the only resource is the dashboard UI template, which
+      // carries zero user data (per-user data arrives via tool results).
       cacheHints: {
-        "tools/list": { ttlMs: 3_600_000, cacheScope: "public" }
+        "tools/list": { ttlMs: 3_600_000, cacheScope: "public" },
+        "resources/list": { ttlMs: 3_600_000, cacheScope: "public" },
+        "resources/read": { ttlMs: 3_600_000, cacheScope: "public" }
       }
     }
   );
 
   const uid = props.whoopUserId;
   const db = env.DB;
+
+  // show_dashboard tool + ui:// resource (MCP Apps, SEP-1865)
+  registerDashboard(server, env, uid, origin);
 
   server.registerTool(
     "get_recovery",

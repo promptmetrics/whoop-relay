@@ -17,7 +17,9 @@ const apiHandler = {
     if (!props || typeof props.whoopUserId !== "number") {
       return new Response("unauthorized", { status: 401 });
     }
-    const handler = createMcpHandler(() => buildServer(env, props));
+    // origin feeds share-link URLs so dev/tunnel/prod all mint working links
+    const origin = new URL(request.url).origin;
+    const handler = createMcpHandler(() => buildServer(env, props, origin));
     return handler.fetch(request);
   }
 };

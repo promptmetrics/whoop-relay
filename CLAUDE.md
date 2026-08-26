@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Multi-user orchestration layer: WHOOP webhooks → Cloudflare Queue → consumer → D1 read model, served to Claude clients through a remote MCP server (spec **2026-07-28**) at `https://whoop.promptmetrics.dev/mcp`. Deployed and live. The full architecture rationale lives outside the repo at `../whoop-relay-plan.md`.
+Multi-user orchestration layer: WHOOP webhooks → Cloudflare Queue → consumer → D1 read model, served to Claude clients through a remote MCP server (spec **2026-07-28**) at `https://whoop.promptmetrics.dev/mcp`, plus an MCP Apps dashboard and an authenticated live dashboard at `/dashboard`. Deployed and live. The full decision record and architecture handover is `docs/ARCHITECTURE.md`; the original planning rationale lives outside the repo at `../whoop-relay-plan.md`.
 
 ## Commands
 

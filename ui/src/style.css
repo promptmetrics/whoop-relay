@@ -1,0 +1,324 @@
+/* Design tokens — reference dataviz palette; dark mode is a selected set of
+   steps, not an automatic flip. The iframe host controls the page; we follow
+   prefers-color-scheme. */
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --series-1: #2a78d6; /* blue */
+  --series-2: #eb6834; /* orange */
+  --series-3: #1baf7a; /* aqua */
+  --series-4: #eda100; /* yellow */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --delta-good: #006300;
+  --delta-bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+    --delta-good: #0ca30c;
+    --delta-bad: #e66767;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --delta-good: #0ca30c;
+  --delta-bad: #e66767;
+}
+
+* {
+  box-sizing: border-box;
+}
+/* Author display rules (flex/grid) beat the UA [hidden] style — restore it. */
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.viz-root {
+  background: var(--page);
+  color: var(--text-primary);
+  min-height: 100vh;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.titleblock {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+h1 {
+  font-size: 18px;
+  margin: 0;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 2px;
+}
+.range-label {
+  color: var(--text-secondary);
+}
+.mode-badge {
+  font-size: 12px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.caption {
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+/* Filter bar — one row above the charts */
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.presets {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.presets button {
+  background: transparent;
+  border: 0;
+  padding: 5px 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+}
+.presets button:hover {
+  background: var(--grid);
+}
+.presets button[aria-pressed="true"] {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.customrange {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+.customrange input,
+select,
+.customrange button {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.customrange button {
+  cursor: pointer;
+}
+.panel-toggles {
+  position: relative;
+}
+.panel-toggles summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  list-style: none;
+}
+.panel-toggles div {
+  position: absolute;
+  right: 0;
+  z-index: 10;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.panel-toggles label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.status-line {
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+
+/* Panels */
+#panels {
+  display: grid;
+  gap: 14px;
+}
+section[data-panel] {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.chartbox {
+  position: relative;
+  height: 190px;
+  margin-top: 8px;
+}
+.chartbox.tall {
+  height: 240px;
+}
+.chartbox.short {
+  height: 120px;
+}
+
+/* Stat tiles */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.tile .label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.tile .value {
+  font-size: 26px;
+  font-weight: 650;
+  margin: 2px 0;
+}
+.tile .unit {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.tile .delta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tile .delta.up {
+  color: var(--delta-good);
+}
+.tile .delta.down {
+  color: var(--delta-bad);
+}
+
+/* Tables */
+.tablewrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+th,
+td {
+  text-align: left;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.datatable {
+  margin-top: 8px;
+}
+.datatable summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.datatable div {
+  overflow-x: auto;
+}
+
+.freshness {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.freshness .stale {
+  color: var(--status-warning);
+}
+
+.empty {
+  color: var(--text-muted);
+  padding: 24px 0;
+  text-align: center;
+}

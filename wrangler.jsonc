@@ -28,6 +28,13 @@
     }
   ],
 
+  // Bundle the built dashboard UI (ui/dist/index.html) as a Text module —
+  // imported by src/mcp/dashboard.ts and src/share.ts. Built by `npm run
+  // build:ui` (predev/predeploy hooks).
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
+  ],
+
   "queues": {
     "producers": [
       { "binding": "EVENT_QUEUE", "queue": "whoop-events" }

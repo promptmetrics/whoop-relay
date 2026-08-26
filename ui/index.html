@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>WHOOP Dashboard</title>
+  </head>
+  <body>
+    <!-- Share route replaces `null` with a snapshot payload; MCP App mode leaves it. -->
+    <script id="snapshot" type="application/json">null</script>
+
+    <div id="app" class="viz-root">
+      <header class="topbar">
+        <div class="titleblock">
+          <h1>WHOOP Dashboard</h1>
+          <span id="range-label" class="range-label"></span>
+          <span id="mode-badge" class="mode-badge" hidden></span>
+          <a id="logout-link" class="mode-badge" href="/dashboard/logout" hidden>Log out</a>
+        </div>
+        <div class="filterbar" id="filterbar">
+          <div class="presets" id="presets" role="group" aria-label="Date range">
+            <button type="button" data-days="7">7d</button>
+            <button type="button" data-days="30">30d</button>
+            <button type="button" data-days="90">90d</button>
+          </div>
+          <div class="customrange" id="customrange">
+            <input type="date" id="range-start" aria-label="Start date" />
+            <span aria-hidden="true">–</span>
+            <input type="date" id="range-end" aria-label="End date" />
+            <button type="button" id="range-apply">Apply</button>
+          </div>
+          <select id="sport-filter" aria-label="Sport filter">
+            <option value="">All sports</option>
+          </select>
+          <details class="panel-toggles">
+            <summary>Panels</summary>
+            <div id="panel-toggles"></div>
+          </details>
+        </div>
+      </header>
+
+      <p id="status-line" class="status-line" hidden></p>
+
+      <main id="panels">
+        <section data-panel="stats" hidden>
+          <div class="tiles" id="tiles"></div>
+        </section>
+
+        <section data-panel="recovery" hidden>
+          <h2>Recovery</h2>
+          <p class="caption">Daily recovery score, colored by WHOOP band, with a 7-day average line.</p>
+          <div class="chartbox tall"><canvas id="chart-recovery"></canvas></div>
+          <details class="datatable"><summary>Data table</summary><div id="table-recovery"></div></details>
+        </section>
+
+        <section data-panel="hrv_rhr" hidden>
+          <h2>HRV &amp; Resting Heart Rate</h2>
+          <p class="caption">Higher HRV and lower RHR generally signal better readiness.</p>
+          <div class="chartbox"><canvas id="chart-hrv"></canvas></div>
+          <div class="chartbox"><canvas id="chart-rhr"></canvas></div>
+          <details class="datatable"><summary>Data table</summary><div id="table-hrv-rhr"></div></details>
+        </section>
+
+        <section data-panel="sleep" hidden>
+          <h2>Sleep</h2>
+          <p class="caption">Nightly sleep stages (hours) and sleep performance.</p>
+          <div class="chartbox tall"><canvas id="chart-sleep-stages"></canvas></div>
+          <div class="chartbox short"><canvas id="chart-sleep-perf"></canvas></div>
+          <details class="datatable"><summary>Data table</summary><div id="table-sleep"></div></details>
+        </section>
+
+        <section data-panel="strain_vs_recovery" hidden>
+          <h2>Strain vs Recovery</h2>
+          <p class="caption">Day strain on top; the recovery your body posted the next morning below.</p>
+          <div class="chartbox"><canvas id="chart-strain"></canvas></div>
+          <div class="chartbox"><canvas id="chart-next-recovery"></canvas></div>
+          <div class="chartbox"><canvas id="chart-strain-scatter"></canvas></div>
+          <details class="datatable"><summary>Data table</summary><div id="table-strain"></div></details>
+        </section>
+
+        <section data-panel="workouts" hidden>
+          <h2>Workouts</h2>
+          <div class="chartbox"><canvas id="chart-sport-strain"></canvas></div>
+          <div class="tablewrap"><table id="workout-table">
+            <thead><tr>
+              <th>Date</th><th>Sport</th><th>Duration</th><th>Strain</th><th>kJ</th><th>Avg HR</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </section>
+      </main>
+
+      <footer id="freshness" class="freshness"></footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -9,6 +9,8 @@ export interface Env {
   RATE_BUDGET: DurableObjectNamespace<RateBudget>;
   WHOOP_CLIENT_ID: string;
   WHOOP_CLIENT_SECRET: string;
+  // HMAC key for /dashboard browser-session cookies (wrangler secret)
+  SESSION_SECRET: string;
 }
 
 // WHOOP v2 webhook event types. Creates fire as .updated; there are no
