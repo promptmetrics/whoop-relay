@@ -176,6 +176,11 @@ Six panels: stat tiles with deltas against the previous equal-length window; rec
 
 ### 5.4 · The browser login
 
+![Authenticated dashboard login flow](whoop-authenticated-dashboard.png)
+
+<details>
+<summary>Diagram source (mermaid)</summary>
+
 ```mermaid
 sequenceDiagram
   participant B as Browser
@@ -193,6 +198,8 @@ sequenceDiagram
   R->>R: verify signature + expiry → user id
   R-->>B: page with that user's data injected, web mode on
 ```
+
+</details>
 
 ### 5.5 · Routes, data, files
 
