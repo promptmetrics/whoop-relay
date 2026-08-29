@@ -119,3 +119,7 @@ To preview the dashboard with synthetic data, open `ui/dist/index.html` directly
 ### Testing the pipeline (WHOOP's own recipe)
 
 Edit a past sleep's end time by one minute in the WHOOP app — the updated sleep **and** its recomputed recovery should land in D1 with no manual API calls. A backdated 5-minute workout tests the workout path.
+
+## License
+
+[MIT](LICENSE)

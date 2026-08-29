@@ -2,6 +2,7 @@
   "name": "whoop-relay",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Multi-user WHOOP orchestration layer: webhook ingest -> queue -> D1 read model, served to Claude clients over a remote MCP server (spec 2026-07-28).",
   "type": "module",
   "scripts": {
