@@ -123,3 +123,7 @@ Edit a past sleep's end time by one minute in the WHOOP app — the updated slee
 ## License
 
 [MIT](LICENSE)
+
+---
+
+Built by [Izzy Aly](https://github.com/iiizzzyyy) at [PromptMetrics](https://github.com/promptmetrics).
