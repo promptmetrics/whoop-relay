@@ -1,5 +1,6 @@
 // WHOOP v2 API client. v1 is removed; v2 is the only API.
 const API_BASE = "https://api.prod.whoop.com/developer/v2";
+const LOW_QUOTA_WARN = 25;
 
 export class WhoopApiError extends Error {
   constructor(
@@ -50,6 +51,22 @@ async function whoopFetch(
     method,
     headers: { Authorization: `Bearer ${token}` }
   });
+
+  // WHOOP reports remaining quota against the *nearest* window (minute or
+  // day). Logging when it runs low is how we know whether the granted limits
+  // need an increase request before users feel it.
+  const remaining = Number(res.headers.get("X-RateLimit-Remaining"));
+  if (Number.isFinite(remaining) && remaining < LOW_QUOTA_WARN) {
+    console.warn(
+      JSON.stringify({
+        event: "whoop_ratelimit_low",
+        remaining,
+        limit: res.headers.get("X-RateLimit-Limit"),
+        reset_s: res.headers.get("X-RateLimit-Reset"),
+        path
+      })
+    );
+  }
 
   if (res.status === 429) {
     const reset = Number(res.headers.get("X-RateLimit-Reset") ?? "60");

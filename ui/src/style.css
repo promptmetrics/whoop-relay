@@ -15,9 +15,15 @@
   --series-2: #eb6834; /* orange */
   --series-3: #1baf7a; /* aqua */
   --series-4: #eda100; /* yellow */
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-critical: #d03b3b;
+  --status-good: #16ec06; /* WHOOP high recovery (67–100) */
+  --status-warning: #ffde00; /* WHOOP medium recovery (34–66) */
+  --status-critical: #ff0026; /* WHOOP low recovery (0–33) */
+  --whoop-strain: #0093e7;
+  --whoop-sleep: #7ba1bb;
+  --whoop-sleep-deep: #5b7f99;
+  --whoop-sleep-light: #a9c1d1;
+  --whoop-recovery-blue: #67aee6;
+  --whoop-teal: #00f19f;
   --delta-good: #006300;
   --delta-bad: #d03b3b;
 }
@@ -36,9 +42,15 @@
     --series-2: #d95926;
     --series-3: #199e70;
     --series-4: #c98500;
-    --status-good: #0ca30c;
-    --status-warning: #fab219;
-    --status-critical: #d03b3b;
+    --status-good: #16ec06; /* WHOOP high recovery (67–100) */
+    --status-warning: #ffde00; /* WHOOP medium recovery (34–66) */
+    --status-critical: #ff0026; /* WHOOP low recovery (0–33) */
+    --whoop-strain: #0093e7;
+    --whoop-sleep: #7ba1bb;
+    --whoop-sleep-deep: #5b7f99;
+    --whoop-sleep-light: #a9c1d1;
+    --whoop-recovery-blue: #67aee6;
+    --whoop-teal: #00f19f;
     --delta-good: #0ca30c;
     --delta-bad: #e66767;
   }
@@ -57,9 +69,15 @@
   --series-2: #d95926;
   --series-3: #199e70;
   --series-4: #c98500;
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-critical: #d03b3b;
+  --status-good: #16ec06; /* WHOOP high recovery (67–100) */
+  --status-warning: #ffde00; /* WHOOP medium recovery (34–66) */
+  --status-critical: #ff0026; /* WHOOP low recovery (0–33) */
+  --whoop-strain: #0093e7;
+  --whoop-sleep: #7ba1bb;
+  --whoop-sleep-deep: #5b7f99;
+  --whoop-sleep-light: #a9c1d1;
+  --whoop-recovery-blue: #67aee6;
+  --whoop-teal: #00f19f;
   --delta-good: #0ca30c;
   --delta-bad: #e66767;
 }
@@ -315,6 +333,46 @@ th {
 }
 .freshness .stale {
   color: var(--status-warning);
+}
+
+/* Footer: freshness line, then WHOOP attribution + legal links + disconnect */
+.pagefoot {
+  margin-top: 14px;
+}
+.footbar {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+/* Brand rule: the wordmark is black or white only — it follows text colour,
+   which is exactly those two in this design's light/dark tokens. */
+.whoop-attr {
+  color: var(--text-primary);
+}
+.footer-links a {
+  color: var(--text-secondary);
+  margin-right: 14px;
+}
+button.danger {
+  font: inherit;
+  font-size: 12px;
+  color: var(--status-critical);
+  background: transparent;
+  border: 1px solid var(--status-critical);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button.danger:hover {
+  background: var(--status-critical);
+  color: #fff;
 }
 
 .empty {

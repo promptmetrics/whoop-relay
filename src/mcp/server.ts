@@ -1,9 +1,11 @@
 import { McpServer, inputRequired, acceptedContent } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import type { Env, SessionProps } from "../types";
 import { whoop } from "../whoop/client";
 import { upsertRecovery, upsertCycle, upsertSleep, upsertWorkout } from "../db/upserts";
 import { drawBudget, getToken } from "../consumer";
+import { offboardUser } from "../offboard";
 import { registerDashboard } from "./dashboard";
 
 // D1-first is the payoff of the whole pipeline: trend questions become SQL
@@ -27,7 +29,9 @@ const rangeSchema = z.object({
   end: z.string().optional().describe("End date, YYYY-MM-DD (inclusive). Default: today.")
 });
 
-export function buildServer(env: Env, props: SessionProps, origin: string): McpServer {
+const DISCONNECT_PHRASE = "DELETE MY WHOOP DATA";
+
+export function buildServer(env: Env, props: SessionProps, origin: string, oauth?: OAuthHelpers): McpServer {
   const server = new McpServer(
     { name: "whoop-relay", version: "0.1.0" },
     {
@@ -288,14 +292,11 @@ export function buildServer(env: Env, props: SessionProps, origin: string): McpS
       })
     },
     async (args, ctx) => {
-      const user = await db
-        .prepare(`SELECT status FROM users WHERE whoop_user_id = ?`)
-        .bind(uid)
-        .first<{ status: string }>();
-      if (user?.status !== "connected") {
+      const user = await db.prepare(`SELECT 1 AS x FROM users WHERE whoop_user_id = ?`).bind(uid).first();
+      if (!user) {
         return json({
           error: "whoop_disconnected",
-          message: "This WHOOP account is disconnected. Re-connect via the OAuth flow to resume syncing."
+          message: "This WHOOP account is not connected (disconnected or never finished onboarding). Re-run the connect flow to resume syncing."
         });
       }
 
@@ -364,6 +365,34 @@ export function buildServer(env: Env, props: SessionProps, origin: string): McpS
       }
 
       return json({ synced, message: "Datastore refreshed from the live WHOOP API." });
+    }
+  );
+
+  server.registerTool(
+    "disconnect_whoop",
+    {
+      title: "Disconnect WHOOP and delete my data",
+      description:
+        "Destructive, irreversible: revokes this app's access to the connected WHOOP account, deletes every stored WHOOP record (recovery, sleep, strain, workouts, body measurements, profile) and ends the connection. " +
+        "Ask the user for explicit confirmation first, then pass confirm=\"DELETE MY WHOOP DATA\". Reconnecting later starts a fresh 6-month backfill.",
+      inputSchema: z.object({
+        confirm: z.string().describe('Must be exactly "DELETE MY WHOOP DATA".')
+      }),
+      annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: true }
+    },
+    async (args) => {
+      if (args.confirm !== DISCONNECT_PHRASE) {
+        return json({
+          error: "confirmation_required",
+          message: `Nothing was deleted. Call again with confirm="${DISCONNECT_PHRASE}" once the user has agreed.`
+        });
+      }
+      await offboardUser(env, uid, { revokeUpstream: true, oauth });
+      return json({
+        deleted: true,
+        message:
+          "WHOOP access revoked and all stored data deleted. This connector's authorization was revoked too — remove it from your client, and reconnect any time to start over."
+      });
     }
   );
 

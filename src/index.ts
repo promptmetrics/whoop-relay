@@ -1,8 +1,8 @@
-import OAuthProvider from "@cloudflare/workers-oauth-provider";
+import OAuthProvider, { type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import type { Env, QueueMsg, SessionProps } from "./types";
 import { handleQueueBatch } from "./consumer";
-import { runReconciliation, runTokenHealthCheck } from "./reconcile";
+import { runReconciliation, runTokenHealthCheck, runDailyPrune } from "./reconcile";
 import { buildServer } from "./mcp/server";
 import { defaultHandler } from "./mcp/auth";
 
@@ -17,9 +17,12 @@ const apiHandler = {
     if (!props || typeof props.whoopUserId !== "number") {
       return new Response("unauthorized", { status: 401 });
     }
-    // origin feeds share-link URLs so dev/tunnel/prod all mint working links
+    // origin feeds the browser-dashboard URL in tool text so dev/tunnel/prod all point at themselves
     const origin = new URL(request.url).origin;
-    const handler = createMcpHandler(() => buildServer(env, props, origin));
+    // The provider injects its helpers into env for fetch handlers; the
+    // disconnect tool uses them to revoke this user's MCP grants.
+    const oauth = (env as Env & { OAUTH_PROVIDER?: OAuthHelpers }).OAUTH_PROVIDER;
+    const handler = createMcpHandler(() => buildServer(env, props, origin, oauth));
     return handler.fetch(request);
   }
 };
@@ -44,6 +47,7 @@ export default {
   scheduled: (event, env, ctx) => {
     if (event.cron === "30 3 * * *") {
       ctx.waitUntil(runTokenHealthCheck(env));
+      ctx.waitUntil(runDailyPrune(env));
     } else {
       ctx.waitUntil(runReconciliation(env));
     }

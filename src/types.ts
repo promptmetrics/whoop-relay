@@ -9,8 +9,17 @@ export interface Env {
   RATE_BUDGET: DurableObjectNamespace<RateBudget>;
   WHOOP_CLIENT_ID: string;
   WHOOP_CLIENT_SECRET: string;
-  // HMAC key for /dashboard browser-session cookies (wrangler secret)
+  // HMAC key for /dashboard session cookies and both OAuth state params (wrangler secret)
   SESSION_SECRET: string;
+  // AES-256-GCM key (base64, 32 bytes) sealing WHOOP tokens in the TokenManager DO (wrangler secret)
+  TOKEN_ENCRYPTION_KEY: string;
+  // Access-request notifications (wrangler.jsonc vars + secrets). Email is
+  // best-effort: a missing key logs and skips, it never fails a request.
+  RESEND_API_KEY?: string;
+  EMAIL_FROM: string; // e.g. "WHOOP Relay <no-reply@mail.promptmetrics.dev>"
+  ADMIN_EMAIL: string; // where access requests are announced
+  // WHOOP user id allowed to open /admin (wrangler secret, optional until set)
+  ADMIN_WHOOP_USER_ID?: string;
 }
 
 // WHOOP v2 webhook event types. Creates fire as .updated; there are no

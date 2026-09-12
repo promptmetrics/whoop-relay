@@ -10,7 +10,7 @@ For every architectural decision, its rationale, and detailed request flows, see
 
 The server URL is `https://whoop.promptmetrics.dev/mcp`. Every client goes through the same one-time WHOOP consent screen, which links your WHOOP account and starts a six-month history backfill.
 
-> **Note:** The app is capped at 10 users until WHOOP approves it.
+> **Invite-only.** WHOOP approved the app on 2026-09-11 for up to 100 members. A first-time login is admitted only if the WHOOP account's email is on the allowlist. Anyone else becomes an **access request**: the WHOOP grant is revoked on the spot, only name and email are kept, and the admin approves or denies from an email link or [`/admin`](https://whoop.promptmetrics.dev/admin) (see [Approving users](#approving-users)). What is stored, and how to delete it, is on the [privacy page](https://whoop.promptmetrics.dev/privacy).
 
 ### Claude Code (terminal)
 
@@ -43,12 +43,15 @@ After a new deploy, already-connected clients can take up to an hour to see new 
 | `trend` | Metric trend over a date range |
 | `sync_now` | Live fetch from the WHOOP API, budget-permitting |
 | `show_dashboard` | Interactive dashboard rendered in the chat (MCP Apps) |
+| `disconnect_whoop` | Destructive: revokes WHOOP access, deletes every stored record, revokes the connector grant. Requires `confirm="DELETE MY WHOOP DATA"` |
 
 All tools read D1 except `sync_now` (live fetch, budget-permitting). Cycles/strain have no webhooks upstream — strain freshness comes from recovery-event piggybacks, the 6h cron, and `sync_now`. `show_dashboard` is read-only (`readOnlyHint`) and takes an optional `panels` subset, date range, and granularity.
 
 ## Live dashboard
 
 `https://whoop.promptmetrics.dev/dashboard` — one URL for every user. First visit redirects to the WHOOP login; after that a signed session cookie (30 days) loads *your* data only: recovery bands with a 7-day average, HRV/RHR trends, sleep stages, strain vs next-day recovery, and workouts, with date/sport/panel filters. Log out from the link in the header.
+
+The footer carries the WHOOP attribution, links to [`/privacy`](https://whoop.promptmetrics.dev/privacy) and [`/support`](https://whoop.promptmetrics.dev/support), and a **Disconnect WHOOP & delete my data** button. Disconnecting — from that button, the `disconnect_whoop` tool, or by revoking the app inside WHOOP — deletes everything the service holds for that user in one step. There is no soft-delete and no retention period.
 
 ## Architecture
 
@@ -95,7 +98,10 @@ npx wrangler queues create whoop-events-dlq
 # Secrets
 npx wrangler secret put WHOOP_CLIENT_ID       # from the WHOOP Developer Dashboard app
 npx wrangler secret put WHOOP_CLIENT_SECRET   # from the WHOOP Developer Dashboard app
-openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET   # dashboard session signing key
+openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET   # session cookies + OAuth state signing
+openssl rand -base64 32 | npx wrangler secret put TOKEN_ENCRYPTION_KEY   # AES-GCM key for stored WHOOP tokens (must exist before the first deploy that uses it)
+npx wrangler secret put RESEND_API_KEY        # Resend key (sending access, mail.promptmetrics.dev) for access-request emails; optional — skipped if unset
+npx wrangler secret put ADMIN_WHOOP_USER_ID   # your WHOOP user id (get_profile tool) — the only account that can open /admin
 
 # Schema
 npm run db:migrate:remote
@@ -103,11 +109,30 @@ npm run db:migrate:remote
 npm run deploy   # predeploy hook builds ui/dist/index.html and embeds it in the Worker
 ```
 
-WHOOP app config: redirect URL `https://whoop.promptmetrics.dev/callback`, webhook URL `https://whoop.promptmetrics.dev/webhooks/whoop` (model version v2).
+WHOOP app config: redirect URL `https://whoop.promptmetrics.dev/callback`, webhook URL `https://whoop.promptmetrics.dev/webhooks/whoop` (model version v2), privacy policy URL `https://whoop.promptmetrics.dev/privacy`.
+
+### Approving users
+
+Anyone can start from the landing page (**Request access**) or straight from a Claude client. If their WHOOP email is not on the allowlist:
+
+1. The worker records name, email and WHOOP id in `access_requests`, revokes the grant WHOOP just issued (no seat used, no tokens held), shows a "Request received" page, and emails the applicant a receipt ("pending approval", or "waiting list" when the seat ceiling is reached).
+2. You get an email (via Resend, from `EMAIL_FROM` to `ADMIN_EMAIL` in `wrangler.jsonc`) with **Approve** / **Deny** links, valid 7 days, plus the current seat count. Each link opens a one-button confirm page; the decision applies on that click, so link-prefetching mail scanners cannot decide for you.
+3. Approve adds the email to the allowlist and emails them the connect steps; they then connect from Claude as a normal login. Deny emails a one-line notice. Both are idempotent.
+4. `/admin` (WHOOP login; only `ADMIN_WHOOP_USER_ID` gets in, everyone else sees 404) shows pending and decided requests, who has actually connected, and seats used out of 90.
+
+A hard ceiling of 90 connected users (`MAX_USERS` in `src/mcp/auth.ts`) sits under WHOOP's 100-member grant; logins past it are recorded as waiting-list requests. Denied requests are deleted after 30 days. The terminal path still works for pre-seeding:
+
+```bash
+scripts/allowlist.sh add pilot@example.com "operator-stack pilot"   # invite without a request (idempotent)
+scripts/allowlist.sh list                                            # invited vs connected
+scripts/allowlist.sh remove pilot@example.com                        # un-invite (an already-connected user keeps access until they disconnect)
+```
+
+Append `--local` to target the local dev database.
 
 ### Local development
 
-`.dev.vars` holds dev credentials including a `SESSION_SECRET` line (gitignored). Then:
+`.dev.vars` holds dev credentials: `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, and optionally `RESEND_API_KEY` / `ADMIN_WHOOP_USER_ID` (gitignored). Then:
 
 ```bash
 npm run db:migrate:local

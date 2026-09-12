@@ -9,14 +9,38 @@ import {
   clearCookie,
   getCookie,
   loginSetCookie,
+  mintDecisionToken,
   mintLoginState,
+  mintMcpState,
   mintSessionCookie,
   sessionSetCookie,
-  verifyLoginState
+  verifyDecisionToken,
+  verifyLoginState,
+  verifyMcpState,
+  verifySessionCookie,
+  type Decision
 } from "../session";
 import { whoop } from "../whoop/client";
 import { upsertUser, upsertBodyMeasurement } from "../db/upserts";
 import { drawBudget } from "../consumer";
+import { offboardUser, revokeUpstream } from "../offboard";
+import {
+  landingPage,
+  privacyPage,
+  supportPage,
+  requestReceivedPage,
+  adminPage,
+  decisionConfirmPage,
+  decisionResultPage,
+  type RequestRow
+} from "../pages";
+import {
+  sendEmail,
+  adminRequestMail,
+  applicantReceivedMail,
+  applicantApprovedMail,
+  applicantDeniedMail
+} from "../email";
 
 // WHOOP is the upstream identity provider: one consent screen both
 // authenticates the MCP client and connects the WHOOP account. Onboarding a
@@ -30,6 +54,9 @@ const WHOOP_SCOPES =
   "offline read:recovery read:cycles read:sleep read:workout read:profile read:body_measurement";
 const BACKFILL_MONTHS = 6;
 const BACKFILL_RESOURCES: BackfillResource[] = ["cycle", "sleep", "recovery", "workout"];
+// WHOOP approved this app for 100 members (2026-09-11). Whether revoked
+// members free their slot is unconfirmed, so stop admitting well short of it.
+const MAX_USERS = 90;
 
 export const defaultHandler = {
   // The provider injects OAUTH_PROVIDER into env at runtime; the exported
@@ -45,14 +72,19 @@ export const defaultHandler = {
     }
     if (url.pathname === "/dashboard/login") return handleDashboardLogin(request, env);
     if (url.pathname === "/dashboard/logout") return handleDashboardLogout(request);
+    if (url.pathname === "/dashboard/disconnect" && request.method === "POST") {
+      return handleDashboardDisconnect(request, env);
+    }
     if (url.pathname === "/authorize") return handleAuthorize(request, env);
     if (url.pathname === "/callback") return handleCallback(request, env);
     if (url.pathname === "/") {
-      return new Response(
-        "whoop-relay: WHOOP data for Claude over MCP.\n\nMCP endpoint: /mcp (streamable HTTP, OAuth).\nConnect from Claude by adding this server's URL — the consent screen links your WHOOP account.\nLive dashboard: /dashboard (WHOOP login, per-user).\n",
-        { headers: { "Content-Type": "text/plain" } }
-      );
+      return landingPage(url.origin, { disconnected: url.searchParams.get("disconnected") === "1" });
     }
+    if (url.pathname === "/privacy") return privacyPage();
+    if (url.pathname === "/support") return supportPage();
+    if (url.pathname === "/admin" && request.method === "GET") return handleAdminPage(request, env);
+    if (url.pathname === "/admin/requests" && request.method === "POST") return handleAdminAction(request, env);
+    if (url.pathname === "/admin/decide") return handleDecisionLink(request, env);
     return new Response("not found", { status: 404 });
   }
 };
@@ -63,9 +95,10 @@ async function handleAuthorize(request: Request, env: EnvWithOAuth): Promise<Res
   if (!client) return new Response("unknown client", { status: 400 });
 
   // The downstream (MCP client) auth request rides through the WHOOP flow in
-  // the state parameter; completeAuthorization validates it against the
+  // the state parameter, HMAC-signed with a 10-minute expiry so nobody can
+  // hand-craft one; completeAuthorization still validates it against the
   // registered client + redirect URI on the way back.
-  const state = btoa(JSON.stringify(authReq));
+  const state = await mintMcpState(authReq, env.SESSION_SECRET);
   const url = new URL(request.url);
 
   const upstream = new URL(WHOOP_AUTHORIZE_URL);
@@ -88,12 +121,8 @@ async function handleCallback(request: Request, env: EnvWithOAuth): Promise<Resp
     return handleBrowserCallback(request, env, code, state);
   }
 
-  let authReq: AuthRequest;
-  try {
-    authReq = JSON.parse(atob(state)) as AuthRequest;
-  } catch {
-    return new Response("bad state", { status: 400 });
-  }
+  const authReq = await verifyMcpState<AuthRequest>(state, env.SESSION_SECRET);
+  if (!authReq) return new Response("bad state — start the connection again", { status: 400 });
 
   const login = await completeWhoopLogin(request, env, code);
   if (!login.ok) return login.response;
@@ -154,13 +183,25 @@ async function completeWhoopLogin(request: Request, env: EnvWithOAuth, code: str
   }
   const whoopUserId = profile.user_id;
 
-  const stub = env.TOKEN_MANAGER.get(env.TOKEN_MANAGER.idFromName(String(whoopUserId)));
-  await stub.storeTokens(tokens);
-
   const existing = await env.DB
     .prepare(`SELECT 1 AS x FROM users WHERE whoop_user_id = ?`)
     .bind(whoopUserId)
     .first();
+
+  // Invite gate for first-time users. An uninvited login becomes an access
+  // request: the freshly minted grant goes straight back to WHOOP, nothing
+  // but name/email/id is kept, and the admin is notified.
+  if (!existing) {
+    const verdict = await admitNewUser(env, profile.email);
+    if (verdict !== "ok") {
+      await revokeUpstream(env, tokens.access_token, whoopUserId);
+      const response = await recordAccessRequest(env, url.origin, profile, verdict === "full");
+      return { ok: false, response };
+    }
+  }
+
+  const stub = env.TOKEN_MANAGER.get(env.TOKEN_MANAGER.idFromName(String(whoopUserId)));
+  await stub.storeTokens(tokens);
   await upsertUser(env.DB, profile);
   const body = await whoop.bodyMeasurement(tokens.access_token);
   if (body) await upsertBodyMeasurement(env.DB, whoopUserId, body);
@@ -183,6 +224,193 @@ async function completeWhoopLogin(request: Request, env: EnvWithOAuth, code: str
     whoopUserId,
     name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || undefined
   };
+}
+
+async function admitNewUser(env: Env, email: string | undefined): Promise<"ok" | "not_invited" | "full"> {
+  if (!email) return "not_invited";
+  // allowlist.email is COLLATE NOCASE; trimming covers copy-paste whitespace.
+  const invited = await env.DB.prepare(`SELECT 1 AS x FROM allowlist WHERE email = ?`).bind(email.trim()).first();
+  if (!invited) return "not_invited";
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM users`).first<{ n: number }>();
+  if ((row?.n ?? 0) >= MAX_USERS) {
+    console.warn(JSON.stringify({ event: "user_cap_reached", max_users: MAX_USERS }));
+    return "full";
+  }
+  return "ok";
+}
+
+// ---------------------------------------------------------------------------
+// Access requests
+
+type Profile = { user_id: number; first_name?: string; last_name?: string; email?: string };
+
+const RENOTIFY_AFTER_DENIAL_MS = 7 * 86_400_000;
+
+async function seatCount(env: Env): Promise<{ used: number; max: number }> {
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM users`).first<{ n: number }>();
+  return { used: row?.n ?? 0, max: MAX_USERS };
+}
+
+async function recordAccessRequest(env: Env, origin: string, profile: Profile, full: boolean): Promise<Response> {
+  const email = profile.email ?? "";
+  const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null;
+  const prev = await env.DB
+    .prepare(`SELECT status, decided_at FROM access_requests WHERE whoop_user_id = ?`)
+    .bind(profile.user_id)
+    .first<{ status: string; decided_at: string | null }>();
+  const requestedAt = new Date().toISOString();
+
+  await env.DB
+    .prepare(
+      `INSERT INTO access_requests (whoop_user_id, name, email, status, requested_at, decided_at, decided_via)
+       VALUES (?, ?, ?, 'pending', ?, NULL, NULL)
+       ON CONFLICT(whoop_user_id) DO UPDATE SET
+         name=excluded.name, email=excluded.email, status='pending',
+         requested_at=excluded.requested_at, decided_at=NULL, decided_via=NULL`
+    )
+    .bind(profile.user_id, name, email, requestedAt)
+    .run();
+
+  // A denial that is less than a week old re-pages nobody — the row is back
+  // to pending and visible on /admin, that is enough.
+  const recentlyDenied =
+    prev?.status === "denied" && prev.decided_at != null && Date.now() - Date.parse(prev.decided_at) < RENOTIFY_AFTER_DENIAL_MS;
+  if (!recentlyDenied) {
+    const [approve, deny] = await Promise.all([
+      mintDecisionToken(profile.user_id, "approve", env.SESSION_SECRET),
+      mintDecisionToken(profile.user_id, "deny", env.SESSION_SECRET)
+    ]);
+    const adminMail = adminRequestMail(
+      env,
+      { whoopUserId: profile.user_id, name, email, requestedAt, isRepeat: !!prev },
+      {
+        approve: `${origin}/admin/decide?token=${approve}`,
+        deny: `${origin}/admin/decide?token=${deny}`,
+        admin: `${origin}/admin`
+      },
+      await seatCount(env)
+    );
+    // Applicant receipt goes out alongside the admin ping: a Claude client may
+    // not show the "Request received" page, so the email is their record.
+    await Promise.all([
+      sendEmail(env, adminMail),
+      email ? sendEmail(env, applicantReceivedMail(email, origin, { full })) : Promise.resolve(false)
+    ]);
+  }
+  console.log(JSON.stringify({ event: "access_requested", user_id: profile.user_id, full, repeat: !!prev }));
+  return requestReceivedPage(email || null, { full, repeat: !!prev });
+}
+
+type DecisionOutcome = { outcome: "applied" | "already" | "not_found"; email: string | null; status: string | null };
+
+async function decideRequest(
+  env: Env,
+  origin: string,
+  whoopUserId: number,
+  action: Decision,
+  via: "email-link" | "admin-page"
+): Promise<DecisionOutcome> {
+  const row = await env.DB
+    .prepare(`SELECT email, status FROM access_requests WHERE whoop_user_id = ?`)
+    .bind(whoopUserId)
+    .first<{ email: string; status: string }>();
+  if (!row) return { outcome: "not_found", email: null, status: null };
+  if (row.status !== "pending") return { outcome: "already", email: row.email, status: row.status };
+
+  const now = new Date().toISOString();
+  const status = action === "approve" ? "approved" : "denied";
+  const statements = [
+    env.DB
+      .prepare(`UPDATE access_requests SET status=?, decided_at=?, decided_via=? WHERE whoop_user_id=? AND status='pending'`)
+      .bind(status, now, via, whoopUserId)
+  ];
+  if (action === "approve" && row.email) {
+    statements.unshift(
+      env.DB
+        .prepare(`INSERT INTO allowlist (email, added_at, note) VALUES (?, ?, 'access-request') ON CONFLICT(email) DO NOTHING`)
+        .bind(row.email, now)
+    );
+  }
+  await env.DB.batch(statements);
+
+  if (row.email) {
+    await sendEmail(env, action === "approve" ? applicantApprovedMail(row.email, origin) : applicantDeniedMail(row.email));
+  }
+  console.log(JSON.stringify({ event: "access_decided", user_id: whoopUserId, status, via }));
+  return { outcome: "applied", email: row.email || null, status };
+}
+
+// /admin is for one WHOOP account: the id in ADMIN_WHOOP_USER_ID. Anyone else
+// with a valid session sees a 404 rather than a hint that the page exists.
+async function requireAdmin(request: Request, env: Env): Promise<"ok" | "login" | "forbidden"> {
+  const uid = await verifySessionCookie(getCookie(request, SESSION_COOKIE), env.SESSION_SECRET);
+  if (uid == null) return "login";
+  return env.ADMIN_WHOOP_USER_ID && String(uid) === env.ADMIN_WHOOP_USER_ID ? "ok" : "forbidden";
+}
+
+async function handleAdminPage(request: Request, env: Env): Promise<Response> {
+  const auth = await requireAdmin(request, env);
+  if (auth === "login") return Response.redirect(new URL("/dashboard/login", request.url).toString(), 302);
+  if (auth === "forbidden") return new Response("not found", { status: 404 });
+
+  const rows = await env.DB
+    .prepare(
+      `SELECT r.whoop_user_id, r.name, r.email, r.status, r.requested_at, r.decided_at, r.decided_via,
+              CASE WHEN u.whoop_user_id IS NULL THEN 0 ELSE 1 END AS connected
+       FROM access_requests r LEFT JOIN users u ON u.whoop_user_id = r.whoop_user_id
+       ORDER BY (r.status = 'pending') DESC, r.requested_at DESC`
+    )
+    .all<RequestRow>();
+  const flash = new URL(request.url).searchParams.get("done") ?? undefined;
+  return adminPage({ seats: await seatCount(env), rows: rows.results }, flash);
+}
+
+async function handleAdminAction(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  if (request.headers.get("Origin") !== url.origin) return new Response("forbidden", { status: 403 });
+  const auth = await requireAdmin(request, env);
+  if (auth === "login") return Response.redirect(new URL("/dashboard/login", request.url).toString(), 302);
+  if (auth === "forbidden") return new Response("not found", { status: 404 });
+
+  const form = await request.formData();
+  const whoopUserId = Number(form.get("whoop_user_id"));
+  const action = form.get("action");
+  if (!Number.isInteger(whoopUserId) || (action !== "approve" && action !== "deny")) {
+    return new Response("bad request", { status: 400 });
+  }
+  const result = await decideRequest(env, url.origin, whoopUserId, action, "admin-page");
+  const msg =
+    result.outcome === "applied"
+      ? `${result.email ?? whoopUserId}: ${result.status}`
+      : result.outcome === "already"
+        ? `${result.email ?? whoopUserId} was already ${result.status}`
+        : `request ${whoopUserId} not found`;
+  return Response.redirect(new URL(`/admin?done=${encodeURIComponent(msg)}`, request.url).toString(), 303);
+}
+
+// GET (the email link) only renders a confirm page; the decision is applied
+// on POST. Mail scanners prefetch GET links, so a GET must never decide.
+async function handleDecisionLink(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const token =
+    request.method === "POST" ? String((await request.formData()).get("token") ?? "") : url.searchParams.get("token");
+  const decision = await verifyDecisionToken(token, env.SESSION_SECRET);
+  if (!decision) return new Response("link invalid or expired, open /admin instead", { status: 400 });
+
+  if (request.method === "GET") {
+    const row = await env.DB
+      .prepare(`SELECT name, email, status FROM access_requests WHERE whoop_user_id = ?`)
+      .bind(decision.whoopUserId)
+      .first<{ name: string | null; email: string; status: string }>();
+    if (!row) return decisionResultPage(decision.action, "not_found", null, null);
+    if (row.status !== "pending") return decisionResultPage(decision.action, "already", row.email, row.status);
+    return decisionConfirmPage(decision.action, row.email || null, row.name, token as string);
+  }
+
+  if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+  if (request.headers.get("Origin") !== url.origin) return new Response("forbidden", { status: 403 });
+  const result = await decideRequest(env, url.origin, decision.whoopUserId, decision.action, "email-link");
+  return decisionResultPage(decision.action, result.outcome, result.email, result.status);
 }
 
 async function handleBrowserCallback(
@@ -224,5 +452,27 @@ function handleDashboardLogout(request: Request): Response {
   return new Response(null, {
     status: 302,
     headers: { Location: new URL("/", request.url).toString(), "Set-Cookie": clearCookie(SESSION_COOKIE) }
+  });
+}
+
+// The dashboard's "disconnect and delete" button. Identity comes from the
+// session cookie only; the cookie is SameSite=Lax so a cross-site form post
+// never carries it, and the Origin check makes that explicit.
+async function handleDashboardDisconnect(request: Request, env: EnvWithOAuth): Promise<Response> {
+  const url = new URL(request.url);
+  const origin = request.headers.get("Origin");
+  if (origin !== url.origin) return new Response("forbidden", { status: 403 });
+
+  const uid = await verifySessionCookie(getCookie(request, SESSION_COOKIE), env.SESSION_SECRET);
+  if (uid == null) return Response.redirect(new URL("/dashboard/login", request.url).toString(), 302);
+
+  await offboardUser(env, uid, { revokeUpstream: true, oauth: env.OAUTH_PROVIDER });
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: new URL("/?disconnected=1", request.url).toString(),
+      "Set-Cookie": clearCookie(SESSION_COOKIE)
+    }
   });
 }

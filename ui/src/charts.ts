@@ -201,10 +201,10 @@ export function renderMetricLine(
 }
 
 const STAGES = [
-  { key: "sws_ms", label: "Deep (SWS)", token: "--series-1" },
-  { key: "rem_ms", label: "REM", token: "--series-2" },
-  { key: "light_ms", label: "Light", token: "--series-3" },
-  { key: "awake_ms", label: "Awake", token: "--series-4" }
+  { key: "sws_ms", label: "Deep (SWS)", token: "--whoop-sleep-deep" },
+  { key: "rem_ms", label: "REM", token: "--whoop-sleep" },
+  { key: "light_ms", label: "Light", token: "--whoop-sleep-light" },
+  { key: "awake_ms", label: "Awake", token: "--baseline" }
 ] as const;
 
 export function renderSleepCharts(rows: SleepDay[]): void {
@@ -253,7 +253,7 @@ export function renderSleepCharts(rows: SleepDay[]): void {
     "chart-sleep-perf",
     rows.map((r) => ({ day: r.day, value: r.performance })),
     "Sleep performance %",
-    "--series-1"
+    "--whoop-sleep"
   );
 }
 
@@ -278,7 +278,7 @@ export function renderStrainCharts(strain: StrainDay[], recovery: RecoveryDay[])
             {
               label: "Day strain",
               data: strain.map((s) => s.strain),
-              backgroundColor: token("--series-1"),
+              backgroundColor: token("--whoop-strain"),
               borderRadius: 4,
               borderSkipped: "bottom" as const,
               maxBarThickness: 18
@@ -322,7 +322,7 @@ export function renderStrainCharts(strain: StrainDay[], recovery: RecoveryDay[])
             {
               label: "Strain vs next-day recovery",
               data: pts,
-              backgroundColor: token("--series-1"),
+              backgroundColor: token("--whoop-strain"),
               pointRadius: 4,
               pointHoverRadius: 6
             }
@@ -384,7 +384,7 @@ export function renderSportBars(workouts: WorkoutRow[]): void {
           {
             label: "Total strain",
             data: entries.map(([, v]) => v),
-            backgroundColor: token("--series-1"),
+            backgroundColor: token("--whoop-strain"),
             borderRadius: 4,
             borderSkipped: "start" as const,
             maxBarThickness: 16

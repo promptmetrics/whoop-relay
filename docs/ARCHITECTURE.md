@@ -236,8 +236,11 @@ sequenceDiagram
 - **MCP:** bearer tokens issued by the Worker's own OAuth provider; the user id is sealed into the token at consent and decrypted per request — tools physically cannot query another user's rows.
 - **Web:** identity only from the verified HMAC cookie; forging one requires the server secret; pages ship no-store, no-index, no-referrer, and a meta CSP that blocks all external scripts.
 - **Webhooks:** HMAC-verified against the raw body; unsigned → 401.
-- **Secrets:** `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `COOKIE_ENCRYPTION_KEY`, `SESSION_SECRET` — all Worker secrets, never in the repo; local dev uses `.dev.vars` (git-ignored, read-blocked for coding agents via repo settings).
+- **Secrets:** `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, plus optional `RESEND_API_KEY` and `ADMIN_WHOOP_USER_ID` — all Worker secrets, never in the repo; local dev uses `.dev.vars` (git-ignored, read-blocked for coding agents via repo settings). (`COOKIE_ENCRYPTION_KEY`, listed in earlier versions, was a template leftover that nothing reads.)
+- **Tokens at rest:** WHOOP access/refresh tokens are AES-256-GCM sealed inside the TokenManager DO with `TOKEN_ENCRYPTION_KEY` (legacy plaintext records are re-sealed on first read).
+- **OAuth state:** both flows through `/callback` are HMAC-signed with a 10-minute expiry — `b.` browser nonce, `m.` MCP AuthRequest.
 - **Nothing publishable:** since D-16's reversal there is no route that serves health data without authentication.
+- **Nothing retained:** `offboardUser()` (`src/offboard.ts`) is the single exit path; it deletes every row, the token DO, and the MCP grants in one go. Webhook delivery ids are pruned after 30 days.
 
 ## 6 · Operations
 
@@ -250,13 +253,25 @@ sequenceDiagram
 
 ## 7 · Known limits and open items
 
-- **10-user cap** until WHOOP approves the app (approvals reportedly take months). Submit approval + rate-limit increase after the exit tests.
-- **No test suite** — typecheck plus scripted wire-level verification harnesses were used during development; a real suite is future work.
-- **OAuth state hardening** (signing the MCP flow's state parameter) — accepted for v1, parked.
+- **Approved 2026-09-11** for 100 members / 100 req/min / 10k req/day (see §8). The local guard admits 90; whether revoked members free a slot is unconfirmed with WHOOP.
+- **No test suite** — typecheck plus scripted wire-level verification harnesses were used during development; a real suite is future work, and the offboarding purge is the first place it should land.
 - **MCP-connect regression check** after the callback refactor — the branch logic is tested, but a real client reconnect should confirm it.
 - **Range changes on the web dashboard reload the page** — deliberate (no JSON API surface to secure); revisit only if it feels slow.
 - **Orphaned KV namespace** from the removed sharing feature still exists in the Cloudflare account — unused, safe to delete manually.
 - **Parked ideas:** a public playbook write-up of the webhook→queue→read-model pattern; a Cloudflare WAF rule keyed on the per-tool routing header; a standalone product domain if this graduates beyond Operator Stack.
+
+## 8 · 2026-09-11 addendum — WHOOP approval and what it obliged
+
+WHOOP approved the developer app (100 members, 100 req/min, 10,000 req/day). Approval makes the API Terms of Use and the Brand & Design Guidelines binding in production, and an audit against them found the gaps below. All were closed the same day; each is a decision in the D-list's spirit.
+
+- **D-19 · Purge on disconnect, no retention.** Terms §4.2(b)/§7.1 forbid keeping copies after access ends. Before: revoked users were flagged `status='disconnected'` and every row, including full raw JSON, stayed forever. Now `offboardUser()` is the only exit and it deletes everything at once; the dashboard button, the `disconnect_whoop` MCP tool (typed confirmation, `destructiveHint`), and every revoke-detection path call it. Reconnecting is a first-time connect again and re-runs the six-month backfill.
+- **D-20 · Invite allowlist + hard ceiling.** WHOOP's 10-member cap was the only gate and approval removed it. A D1 `allowlist` table (email, case-insensitive) is checked on first login; `MAX_USERS = 90` is a second guard under the 100-member grant.
+- **D-26 · Self-serve access requests (2026-09-12).** An uninvited login is not a dead end: the worker records name/email/WHOOP id in `access_requests`, revokes the freshly issued grant in the same request (so a pending request holds no tokens, no data, and no WHOOP seat), shows "Request received", emails the applicant a receipt, and emails the admin one-click approve/deny links (HMAC tokens, 7-day TTL) through Resend. `/admin`, visible only to `ADMIN_WHOOP_USER_ID`, lists the queue and seat count. Approving inserts into `allowlist` and emails connect steps; the applicant then connects from Claude, which is the consent step they would do anyway — so "revoke immediately" costs them nothing. Denied rows are pruned after 30 days. Email is best-effort and never fails the flow.
+- **D-21 · Legal pages on the worker.** `/privacy` and `/support` (plus an HTML landing page) are served by `src/pages.ts`: script-free, meta CSP, honest about Cloudflare hosting and the immediate-deletion promise. The WHOOP dashboard's Privacy Policy URL should point at `/privacy`.
+- **D-22 · Brand compliance.** "DATA BY WHOOP" attribution on landing, dashboard footer, and the in-chat iframe; WHOOP's official SVGs (`src/whoop-brand.ts`), black/white only; recovery bands, strain, and sleep series use the PDF's hex values; metric names unchanged.
+- **D-23 · Signed MCP state.** The parked hardening item: the AuthRequest riding through WHOOP is now `m.<payload>.<exp>.<hmac>` with a 10-minute TTL, verified before `completeAuthorization`.
+- **D-24 · Tokens encrypted at rest.** AES-256-GCM inside the TokenManager DO under `TOKEN_ENCRYPTION_KEY`; plaintext legacy records are re-sealed on first read. Satisfies Terms §2.4 beyond platform encryption.
+- **D-25 · Rate-limit hygiene.** A 429 during reconciliation skips that user instead of aborting the run (three consecutive 429s still end it); `X-RateLimit-Remaining` below 25 is logged so an increase request can be justified with data; `webhook_events` is pruned after 30 days by the daily cron.
 
 ---
 

@@ -7,10 +7,33 @@ CREATE TABLE IF NOT EXISTS users (
   whoop_user_id INTEGER PRIMARY KEY,
   name          TEXT,
   email         TEXT,
-  status        TEXT NOT NULL DEFAULT 'connected', -- connected | disconnected
+  status        TEXT NOT NULL DEFAULT 'connected', -- always 'connected': disconnecting deletes the row (see offboard.ts)
   connected_at  TEXT NOT NULL,                     -- ISO-8601
-  disconnected_at TEXT
+  disconnected_at TEXT                             -- legacy, unused since purge-on-disconnect (2026-09-11)
 );
+
+-- Invite gate. A first-time WHOOP login is admitted only if the profile email
+-- is listed here (case-insensitive). Manage with scripts/allowlist.sh.
+CREATE TABLE IF NOT EXISTS allowlist (
+  email    TEXT PRIMARY KEY COLLATE NOCASE,
+  added_at TEXT NOT NULL,                          -- ISO-8601
+  note     TEXT                                    -- e.g. "operator-stack pilot"
+);
+
+-- Self-serve access requests from the landing page. The WHOOP grant that
+-- produced the row is revoked immediately, so a pending request holds no
+-- tokens, no data, and no WHOOP member seat. Approving inserts the email
+-- into allowlist; the person then connects from Claude as a normal login.
+CREATE TABLE IF NOT EXISTS access_requests (
+  whoop_user_id INTEGER PRIMARY KEY,
+  name          TEXT,
+  email         TEXT NOT NULL COLLATE NOCASE,
+  status        TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | denied
+  requested_at  TEXT NOT NULL,                     -- ISO-8601
+  decided_at    TEXT,
+  decided_via   TEXT                               -- email-link | admin-page
+);
+CREATE INDEX IF NOT EXISTS idx_access_requests_status ON access_requests (status, requested_at);
 
 CREATE TABLE IF NOT EXISTS cycles (
   id         INTEGER PRIMARY KEY,                  -- WHOOP v2: integer cycle id

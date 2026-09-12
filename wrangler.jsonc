@@ -68,9 +68,18 @@
     "crons": ["0 */6 * * *", "30 3 * * *"]
   },
 
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+
+  // Non-secret config for access-request emails (see src/email.ts).
+  "vars": {
+    "EMAIL_FROM": "WHOOP Relay <no-reply@mail.promptmetrics.dev>",
+    "ADMIN_EMAIL": "izzy@promptmetrics.dev"
+  }
 
   // Secrets (set via `wrangler secret put`, never committed):
-  //   WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET  — existing WHOOP dev app
-  //   COOKIE_ENCRYPTION_KEY                 — workers-oauth-provider
+  //   WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET  — the approved WHOOP developer app
+  //   SESSION_SECRET                        — dashboard cookies + OAuth state + decision links
+  //   TOKEN_ENCRYPTION_KEY                  — base64 32-byte AES key for stored WHOOP tokens
+  //   RESEND_API_KEY                        — access-request notifications (optional; skipped if unset)
+  //   ADMIN_WHOOP_USER_ID                   — the WHOOP user id allowed to open /admin (optional until set)
 }

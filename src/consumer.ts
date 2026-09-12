@@ -5,9 +5,9 @@ import {
   upsertWorkout,
   upsertRecovery,
   upsertCycle,
-  tombstone,
-  markUserDisconnected
+  tombstone
 } from "./db/upserts";
+import { offboardUser } from "./offboard";
 import type { TokenResult } from "./do/token-manager";
 import type { DrawResult, Lane } from "./do/rate-budget";
 
@@ -88,7 +88,7 @@ async function processWebhook(msg: Message<QueueMsg>, env: Env): Promise<void> {
 
     const tokenRes = await getToken(env, user_id);
     if (!tokenRes.ok) {
-      if (tokenRes.reason === "revoked") await markUserDisconnected(env.DB, user_id);
+      if (tokenRes.reason === "revoked") await offboardUser(env, user_id, { revokeUpstream: false });
       msg.ack(); // retrying cannot fix a revoked user
       return;
     }
@@ -125,7 +125,7 @@ async function processWebhook(msg: Message<QueueMsg>, env: Env): Promise<void> {
 
     msg.ack();
   } catch (err) {
-    handleProcessingError(err, msg, env, user_id);
+    await handleProcessingError(err, msg, env, user_id);
   }
 }
 
@@ -143,7 +143,7 @@ async function processBackfill(msg: Message<QueueMsg>, env: Env): Promise<void> 
 
     const tokenRes = await getToken(env, user_id);
     if (!tokenRes.ok) {
-      if (tokenRes.reason === "revoked") await markUserDisconnected(env.DB, user_id);
+      if (tokenRes.reason === "revoked") await offboardUser(env, user_id, { revokeUpstream: false });
       msg.ack();
       return;
     }
@@ -175,18 +175,18 @@ async function processBackfill(msg: Message<QueueMsg>, env: Env): Promise<void> 
     }
     msg.ack();
   } catch (err) {
-    handleProcessingError(err, msg, env, user_id);
+    await handleProcessingError(err, msg, env, user_id);
   }
 }
 
-function handleProcessingError(err: unknown, msg: Message<QueueMsg>, env: Env, userId: number): void {
+async function handleProcessingError(err: unknown, msg: Message<QueueMsg>, env: Env, userId: number): Promise<void> {
   if (err instanceof RateLimitedError) {
     msg.retry({ delaySeconds: Math.min(err.resetSeconds + 1, MAX_DELAY_SECONDS) });
     return;
   }
   if (err instanceof UnauthorizedError) {
     // Token was valid moments ago but WHOOP rejected it: user revoked.
-    void markUserDisconnected(env.DB, userId);
+    await offboardUser(env, userId, { revokeUpstream: false });
     msg.ack();
     return;
   }

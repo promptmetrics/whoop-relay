@@ -5,17 +5,27 @@
 const SESSION_TTL_S = 30 * 24 * 3600; // 30 days
 const LOGIN_STATE_TTL_S = 600; // login nonce validity
 
+const MCP_STATE_TTL_S = 600; // consent round-trip through WHOOP
+
 export const SESSION_COOKIE = "whoop_session";
 export const LOGIN_COOKIE = "whoop_login";
-// Browser-login OAuth states carry this prefix; MCP states are base64 JSON
-// blobs from workers-oauth-provider and can never collide with it.
+// Both OAuth flows share one /callback; the state prefix says which one is
+// returning. Browser logins: signed nonce. MCP consents: signed AuthRequest.
 export const BROWSER_STATE_PREFIX = "b.";
+export const MCP_STATE_PREFIX = "m.";
+
+const DECISION_TTL_S = 7 * 24 * 3600; // approve/deny links in the admin email
 
 function b64url(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
+}
+
+function fromB64url(s: string): string {
+  const b64 = s.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  return new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
 }
 
 async function hmac(secret: string, data: string): Promise<string> {
@@ -78,6 +88,59 @@ export async function verifyLoginState(
   if (!timingSafeEqual(nonce, cookieNonce)) return false;
   const expected = await hmac(secret, `login.${nonce}.${expStr}`);
   return timingSafeEqual(sig, expected);
+}
+
+// One-click approve/deny links in the admin notification email. The token
+// binds request id + action + expiry; the handler is idempotent, so a link
+// clicked twice reports the existing decision instead of flipping it.
+export type Decision = "approve" | "deny";
+
+export async function mintDecisionToken(whoopUserId: number, action: Decision, secret: string): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + DECISION_TTL_S;
+  const sig = await hmac(secret, `decide.${whoopUserId}.${action}.${exp}`);
+  return `${whoopUserId}.${action}.${exp}.${sig}`;
+}
+
+export async function verifyDecisionToken(
+  token: string | null,
+  secret: string
+): Promise<{ whoopUserId: number; action: Decision } | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4) return null;
+  const [idStr, action, expStr, sig] = parts as [string, string, string, string];
+  const whoopUserId = Number(idStr);
+  const exp = Number(expStr);
+  if (!Number.isInteger(whoopUserId) || !Number.isInteger(exp) || exp * 1000 < Date.now()) return null;
+  if (action !== "approve" && action !== "deny") return null;
+  const expected = await hmac(secret, `decide.${idStr}.${action}.${expStr}`);
+  return timingSafeEqual(sig, expected) ? { whoopUserId, action } : null;
+}
+
+// The MCP consent flow carries the downstream AuthRequest through WHOOP in
+// the state parameter. Signing it means a forged or replayed state fails
+// here instead of relying solely on completeAuthorization's client checks.
+export async function mintMcpState(payload: unknown, secret: string): Promise<string> {
+  const body = b64url(new TextEncoder().encode(JSON.stringify(payload)).buffer as ArrayBuffer);
+  const exp = Math.floor(Date.now() / 1000) + MCP_STATE_TTL_S;
+  const sig = await hmac(secret, `mcp.${body}.${exp}`);
+  return `${MCP_STATE_PREFIX}${body}.${exp}.${sig}`;
+}
+
+export async function verifyMcpState<T>(state: string, secret: string): Promise<T | null> {
+  if (!state.startsWith(MCP_STATE_PREFIX)) return null;
+  const parts = state.slice(MCP_STATE_PREFIX.length).split(".");
+  if (parts.length !== 3) return null;
+  const [body, expStr, sig] = parts as [string, string, string];
+  const exp = Number(expStr);
+  if (!Number.isInteger(exp) || exp * 1000 < Date.now()) return null;
+  const expected = await hmac(secret, `mcp.${body}.${expStr}`);
+  if (!timingSafeEqual(sig, expected)) return null;
+  try {
+    return JSON.parse(fromB64url(body)) as T;
+  } catch {
+    return null;
+  }
 }
 
 export function getCookie(request: Request, name: string): string | null {

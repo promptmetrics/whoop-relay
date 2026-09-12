@@ -2,6 +2,7 @@ import "./style.css";
 import { App } from "@modelcontextprotocol/ext-apps";
 import type { DashboardPayload, PanelId, WorkoutRow } from "../../src/mcp/dashboard-types";
 import { PANEL_IDS } from "../../src/mcp/dashboard-types";
+import { dataByWhoop } from "../../src/whoop-brand";
 import {
   destroyCharts,
   renderRecoveryChart,
@@ -168,6 +169,10 @@ function renderAll(): void {
     badge.textContent = mode === "demo" ? "demo data" : "snapshot";
   }
   $("logout-link").hidden = mode !== "web";
+  // Privacy/support links and the disconnect button need the Worker origin,
+  // which only the authenticated web page has (the in-chat iframe is sandboxed).
+  $("footer-links").hidden = mode !== "web";
+  $("disconnect-form").hidden = mode !== "web";
 
   for (const section of document.querySelectorAll<HTMLElement>("section[data-panel]")) {
     const id = section.dataset.panel as PanelId;
@@ -177,7 +182,8 @@ function renderAll(): void {
   if (show("stats")) renderTiles(p);
   if (show("recovery")) renderRecoveryChart(p.recovery);
   if (show("hrv_rhr")) {
-    renderMetricLine("chart-hrv", p.recovery.map((r) => ({ day: r.day, value: r.hrv })), "HRV rMSSD (ms)", "--series-1");
+    // Recovery Blue: WHOOP's colour for recovery-related data without a valuation.
+    renderMetricLine("chart-hrv", p.recovery.map((r) => ({ day: r.day, value: r.hrv })), "HRV rMSSD (ms)", "--whoop-recovery-blue");
     renderMetricLine("chart-rhr", p.recovery.map((r) => ({ day: r.day, value: r.rhr })), "Resting HR (bpm)", "--series-2");
   }
   if (show("sleep")) renderSleepCharts(p.sleep);
@@ -342,5 +348,17 @@ async function boot(): Promise<void> {
 
 // Re-render charts when the theme flips (token values change)
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
+
+// WHOOP brand guidelines: every surface showing WHOOP data says so. Rendered
+// once, in every mode, including the in-chat iframe.
+$("whoop-attr").innerHTML = dataByWhoop(100);
+
+$<HTMLFormElement>("disconnect-form").addEventListener("submit", (e) => {
+  const ok = confirm(
+    "Disconnect WHOOP Relay from your WHOOP account and permanently delete every stored record?\n\n" +
+      "This cannot be undone. You can reconnect later; that starts a new six-month import."
+  );
+  if (!ok) e.preventDefault();
+});
 
 void boot();

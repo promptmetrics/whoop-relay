@@ -7,7 +7,7 @@
     <title>WHOOP Dashboard</title>
   </head>
   <body>
-    <!-- Share route replaces `null` with a snapshot payload; MCP App mode leaves it. -->
+    <!-- /dashboard replaces `null` with the user's payload; MCP App mode leaves it. -->
     <script id="snapshot" type="application/json">null</script>
 
     <div id="app" class="viz-root">
@@ -91,7 +91,19 @@
         </section>
       </main>
 
-      <footer id="freshness" class="freshness"></footer>
+      <footer class="pagefoot">
+        <div id="freshness" class="freshness"></div>
+        <div class="footbar">
+          <span id="whoop-attr" class="whoop-attr"></span>
+          <nav id="footer-links" class="footer-links" hidden>
+            <a href="/privacy">Privacy</a>
+            <a href="/support">Support</a>
+          </nav>
+          <form id="disconnect-form" method="post" action="/dashboard/disconnect" hidden>
+            <button type="submit" class="danger">Disconnect WHOOP &amp; delete my data</button>
+          </form>
+        </div>
+      </footer>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

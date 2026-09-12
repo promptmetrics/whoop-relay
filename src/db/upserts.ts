@@ -186,13 +186,21 @@ export async function upsertBodyMeasurement(db: D1Database, userId: number, r: R
     .run();
 }
 
-// A 401 from WHOOP means the user disconnected: stop processing and surface
-// it in the tools instead of silently serving stale data.
-export async function markUserDisconnected(db: D1Database, userId: number): Promise<void> {
-  await db
-    .prepare(`UPDATE users SET status='disconnected', disconnected_at=? WHERE whoop_user_id=?`)
-    .bind(new Date().toISOString(), userId)
-    .run();
+// Offboarding purge: one atomic batch removes every row the user owns.
+// WHOOP's API Terms forbid keeping copies after access ends, so nothing is
+// soft-deleted here — the tombstone() path is for WHOOP-side deletions only.
+export async function deleteUserData(db: D1Database, userId: number): Promise<void> {
+  const byUser = (table: string) => db.prepare(`DELETE FROM ${table} WHERE user_id=?`).bind(userId);
+  await db.batch([
+    byUser("cycles"),
+    byUser("sleeps"),
+    byUser("recoveries"),
+    byUser("workouts"),
+    byUser("body_measurements"),
+    byUser("sync_state"),
+    byUser("webhook_events"),
+    db.prepare(`DELETE FROM users WHERE whoop_user_id=?`).bind(userId)
+  ]);
 }
 
 export async function getWatermark(
