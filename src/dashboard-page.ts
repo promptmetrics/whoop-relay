@@ -47,7 +47,9 @@ export async function handleDashboardPage(request: Request, env: Env): Promise<R
       "Content-Type": "text/html;charset=utf-8",
       "Cache-Control": "private, no-store",
       "X-Robots-Tag": "noindex",
-      "Referrer-Policy": "no-referrer"
+      // same-origin (not no-referrer): under no-referrer browsers send
+      // `Origin: null` on form POSTs, which breaks the CSRF check above.
+      "Referrer-Policy": "same-origin"
     }
   });
 }

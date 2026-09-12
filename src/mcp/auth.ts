@@ -18,6 +18,7 @@ import {
   verifyLoginState,
   verifyMcpState,
   verifySessionCookie,
+  isSameOriginRequest,
   type Decision
 } from "../session";
 import { whoop } from "../whoop/client";
@@ -367,7 +368,7 @@ async function handleAdminPage(request: Request, env: Env): Promise<Response> {
 
 async function handleAdminAction(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  if (request.headers.get("Origin") !== url.origin) return new Response("forbidden", { status: 403 });
+  if (!isSameOriginRequest(request, url)) return new Response("forbidden", { status: 403 });
   const auth = await requireAdmin(request, env);
   if (auth === "login") return Response.redirect(new URL("/dashboard/login", request.url).toString(), 302);
   if (auth === "forbidden") return new Response("not found", { status: 404 });
@@ -408,7 +409,7 @@ async function handleDecisionLink(request: Request, env: Env): Promise<Response>
   }
 
   if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
-  if (request.headers.get("Origin") !== url.origin) return new Response("forbidden", { status: 403 });
+  if (!isSameOriginRequest(request, url)) return new Response("forbidden", { status: 403 });
   const result = await decideRequest(env, url.origin, decision.whoopUserId, decision.action, "email-link");
   return decisionResultPage(decision.action, result.outcome, result.email, result.status);
 }
@@ -460,8 +461,7 @@ function handleDashboardLogout(request: Request): Response {
 // never carries it, and the Origin check makes that explicit.
 async function handleDashboardDisconnect(request: Request, env: EnvWithOAuth): Promise<Response> {
   const url = new URL(request.url);
-  const origin = request.headers.get("Origin");
-  if (origin !== url.origin) return new Response("forbidden", { status: 403 });
+  if (!isSameOriginRequest(request, url)) return new Response("forbidden", { status: 403 });
 
   const uid = await verifySessionCookie(getCookie(request, SESSION_COOKIE), env.SESSION_SECRET);
   if (uid == null) return Response.redirect(new URL("/dashboard/login", request.url).toString(), 302);

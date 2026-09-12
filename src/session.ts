@@ -143,6 +143,20 @@ export async function verifyMcpState<T>(state: string, secret: string): Promise<
   }
 }
 
+// CSRF check for form POSTs.
+//
+// The Origin header alone is not enough here: these pages send
+// `Referrer-Policy: same-origin`, and under a stricter policy (no-referrer)
+// browsers serialize Origin as the string "null" on form submissions, which
+// made every button on the site fail this check. Sec-Fetch-Site is unaffected
+// by referrer policy and is the authoritative signal where it exists; Origin
+// is the fallback for browsers that do not send it.
+export function isSameOriginRequest(request: Request, url: URL): boolean {
+  const site = request.headers.get("Sec-Fetch-Site");
+  if (site) return site === "same-origin";
+  return request.headers.get("Origin") === url.origin;
+}
+
 export function getCookie(request: Request, name: string): string | null {
   const header = request.headers.get("Cookie");
   if (!header) return null;

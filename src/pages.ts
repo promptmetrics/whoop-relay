@@ -71,7 +71,7 @@ function htmlResponse(html: string, status = 200, extra: Record<string, string> 
     headers: {
       "Content-Type": "text/html;charset=utf-8",
       "Cache-Control": "public, max-age=300",
-      "Referrer-Policy": "no-referrer",
+      "Referrer-Policy": "same-origin",
       ...extra
     }
   });
