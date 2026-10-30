@@ -9,8 +9,12 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   // Custom domain — decided 2026-08-25: subdomain of promptmetrics.dev.
+  // pronovahq.com added 2026-10-30 for the domain migration. Both must stay:
+  // access tokens are audience-bound to the issuing host, so installed
+  // connectors only work on the host they were added with (no redirect).
   "routes": [
-    { "pattern": "whoop.promptmetrics.dev", "custom_domain": true }
+    { "pattern": "whoop.promptmetrics.dev", "custom_domain": true },
+    { "pattern": "whoop.pronovahq.com", "custom_domain": true }
   ],
 
   "d1_databases": [
